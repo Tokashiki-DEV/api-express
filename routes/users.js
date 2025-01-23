@@ -1,43 +1,66 @@
 import express from "express";
 import { v4 as uuid } from "uuid";
+import sql from "../db.js";
 const router = express.Router();
 
 var users = [];
 
-router.get("/", (req, res) => {
-  res.send(users);
+router.get("/", async (req, res) => {
+  res.send(await sql`SELECT * FROM users.users;`);
 });
 
-router.get("/:id", (req, res) => {
+router.get("/:id", async (req, res) => {
   const { id } = req.params;
-  const foundUser = users.find((user) => user.id === id);
+  const foundUser =
+    await sql`SELECT * FROM users.users WHERE userid LIKE ${id}`;
   res.send(foundUser);
 });
 
-router.post("/", (req, res) => {
+router.post("/", async (req, res) => {
   const user = req.body;
   const id = uuid();
   users.push({ ...user, id });
-  res.send(`${user.first_name} foi adicionado, id: ${id}`);
+  console.log(req.body);
+  try {
+    await sql`INSERT INTO users.users (userid,firstname,lastname,email)
+    VALUES (${id},${user.firstname},${user.lastname},${user.email});`;
+    res.send(`${user.firstname} id:${id} foi adicionado`);
+  } catch {
+    res.send(`Erro ao adicionar o usuario`);
+  }
 });
 
-router.delete("/:id", (req, res) => {
+router.delete("/:id", async (req, res) => {
   const { id } = req.params;
-  const deleteduser = users.find((user) => user.id === id);
-  users = users.filter((user) => user.id !== id);
-  res.send(`${deleteduser.first_name} deletado, id:${id}`);
+  try {
+    const deleted =
+      await sql`SELECT * FROM users.users WHERE userid LIKE ${id}`;
+    if (deleted == "") {
+      throw Error();
+    }
+    await sql`DELETE FROM users.users WHERE userid LIKE ${id}`;
+    res.send(`Usuario ${id} deletado`);
+  } catch {
+    res.send(`Erro`);
+  }
 });
 
-router.patch("/:id", (req, res) => {
+router.patch("/:id", async (req, res) => {
   const { id } = req.params;
-  const { first_name, last_name, email } = req.body;
-  const user = users.find((user) => user.id === id);
-
-  if (first_name) user.first_name = first_name;
-  if (last_name) user.last_name = last_name;
-  if (email) user.email = email;
-
-  res.send(`${first_name}, id: ${id} foi atualizado`);
+  const { firstname, lastname, email } = req.body;
+  console.log(req.body);
+  try {
+    const patched =
+      await sql`SELECT * FROM users.users WHERE userid LIKE ${id}`;
+    if (firstname) patched[0].firstname = firstname;
+    if (lastname) patched[0].lastname = lastname;
+    if (email) patched[0].email = email;
+    await sql`UPDATE users.users SET firstname = ${patched[0].firstname}, lastname = ${patched[0].lastname}, email = ${patched[0].email} 
+    WHERE userid LIKE ${id};`;
+    res.send(`Usuario ${id} alterado`);
+  } catch {
+    res.send(`Erro`);
+  }
 });
 
 export default router;
