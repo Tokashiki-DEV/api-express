@@ -50,10 +50,10 @@ router.patch("/:id", async (req, res) => {
     if (userToBeChanged == "") {
       throw Error();
     }
-    sql`UPDATE users.users SET firstname = ${firstname}, lastname = ${lastname}, email = ${email} WHERE userid LIKE ${id}`;
-    res.send(`As tabelas ${returnMessage} foram atualizadas`);
+    await sql`UPDATE users.users SET firstname = ${firstname}, lastname = ${lastname}, email = ${email} WHERE userid LIKE ${id}`;
+    res.send(`As tabelas foram atualizadas`);
   } catch {
-    res.send("Usuário não encontrado");
+    res.send("Erro");
   }
 });
 
