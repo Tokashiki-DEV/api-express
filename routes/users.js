@@ -1,14 +1,27 @@
 import express from "express";
 import { v4 as uuid } from "uuid";
 import sql from "../db.js";
+import axios from "axios";
 const router = express.Router();
+
+async function ceprequest(cep) {
+  try {
+    const { data } = await axios.get(`https://viacep.com.br/ws/${cep}/json/`);
+    return data;
+  } catch (error) {
+    console.log(error);
+  }
+}
 
 router.get("/", async (req, res) => {
   res.send(
-    await sql`SELECT users.userid, users.firstname, users.lastname, users.email, ARRAY_AGG(phones.phone) AS phones 
-    FROM users.users 
-    LEFT JOIN users.phones 
+    await sql`SELECT users.userid, users.firstname, users.lastname, users.email, ARRAY_AGG(DISTINCT phones.phone) AS phones,
+    JSON_AGG(JSON_BUILD_OBJECT('cep',address.cep ,'uf',address.uf, 'localidade',address.localidade,'logradouro',address.logradouro)) AS address
+    FROM users.users
+    LEFT JOIN users.phones
     ON users.userid = phones.userid
+    LEFT JOIN users.address
+    ON users.userid = address.userid AND (address.cep IS NOT NULL OR address.uf IS NOT NULL OR address.localidade IS NOT NULL OR address.logradouro IS NOT NULL )
     GROUP BY users.userid, users.firstname, users.lastname, users.email;`
   );
 });
@@ -16,10 +29,12 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   const { id } = req.params;
   const foundUser =
-    await sql`SELECT users.userid, users.firstname, users.lastname, users.email, ARRAY_AGG(phones.phone) AS phones
+    await sql`SELECT users.userid, users.firstname, users.lastname, users.email, ARRAY_AGG(DISTINCT phones.phone) AS phones ,ARRAY_AGG(DISTINCT address.useraddress) AS address
     FROM users.users 
-    JOIN users.phones 
-    ON users.userid = phones.userid 
+    LEFT JOIN users.phones 
+    ON users.userid = phones.userid
+    LEFT JOIN users.address
+    ON users.userid = address.userid
     WHERE users.userid LIKE ${id} GROUP BY users.userid, users.firstname, users.lastname, users.email`;
   res.send(foundUser);
 });
@@ -27,12 +42,32 @@ router.get("/:id", async (req, res) => {
 router.post("/", async (req, res) => {
   const user = req.body;
   const id = uuid();
-  console.log(user.phone);
   try {
     await sql`INSERT INTO users.users (userid,firstname,lastname,email)
     VALUES (${id},${user.firstname},${user.lastname},${user.email});`;
-    await sql`INSERT INTO users.phones (userid,phone)
-    VALUES (${id},${user.phone});`;
+    if (user.phone != undefined) {
+      await sql`INSERT INTO users.phones (userid,phone)
+      VALUES (${id},${user.phone});`;
+    }
+    if (user.cep != undefined) {
+      const response = await ceprequest(user.cep);
+      await sql`INSERT INTO users.address (userid,cep)
+      VALUES(${id},${user.cep})`;
+      await sql`INSERT INTO users.address (userid,estado)
+      VALUES(${id},${response.estado})`;
+      await sql`INSERT INTO users.address (userid,uf)
+      VALUES(${id},${response.uf})`;
+      await sql`INSERT INTO users.address (userid,localidade)
+      VALUES(${id},${response.localidade})`;
+      await sql`INSERT INTO users.address (userid,bairro)
+      VALUES(${id},${response.bairro})`;
+      await sql`INSERT INTO users.address (userid,logradouro)
+      VALUES(${id},${response.logradouro})`;
+    }
+    if (user.numcasa != undefined) {
+      await sql`INSERT INTO users.address(userid,numcasa)
+      VALUES(${id},${user.numcasa})`;
+    }
     res.send(`${user.firstname} id:${id} foi adicionado`);
   } catch {
     res.send(`Erro ao adicionar o usuario`);
@@ -45,6 +80,14 @@ router.post("/phone/:id", async (req, res) => {
   await sql`INSERT INTO users.phones (userid,phone) 
   VALUES (${id}, ${phone})`;
   res.send(`O telefone ${phone} foi adicionado`);
+});
+
+router.post("/address/:id", async (req, res) => {
+  const { id } = req.params;
+  const { address } = req.body;
+  await sql`INSERT INTO users.address (userid,useraddress) 
+  VALUES (${id}, ${address})`;
+  res.send(`O telefone ${address} foi adicionado`);
 });
 
 router.delete("/:id", async (req, res) => {
