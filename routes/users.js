@@ -16,12 +16,12 @@ async function ceprequest(cep) {
 router.get("/", async (req, res) => {
   res.send(
     await sql`SELECT users.userid, users.firstname, users.lastname, users.email, ARRAY_AGG(DISTINCT phones.phone) AS phones,
-    JSON_AGG(JSON_BUILD_OBJECT('cep',address.cep ,'uf',address.uf, 'localidade',address.localidade,'logradouro',address.logradouro)) AS address
+    JSON_AGG(JSON_BUILD_OBJECT('cep',address.cep ,'uf',address.uf, 'localidade',address.localidade,'logradouro',address.logradouro,'bairro',address.bairro,'numero',address.numcasa)) AS address
     FROM users.users
     LEFT JOIN users.phones
     ON users.userid = phones.userid
     LEFT JOIN users.address
-    ON users.userid = address.userid AND (address.cep IS NOT NULL OR address.uf IS NOT NULL OR address.localidade IS NOT NULL OR address.logradouro IS NOT NULL )
+    ON users.userid = address.userid 
     GROUP BY users.userid, users.firstname, users.lastname, users.email;`
   );
 });
@@ -49,24 +49,17 @@ router.post("/", async (req, res) => {
       await sql`INSERT INTO users.phones (userid,phone)
       VALUES (${id},${user.phone});`;
     }
-    if (user.cep != undefined) {
+    if (user.cep != undefined && user.numcasa != undefined) {
       const response = await ceprequest(user.cep);
-      await sql`INSERT INTO users.address (userid,cep)
-      VALUES(${id},${user.cep})`;
-      await sql`INSERT INTO users.address (userid,estado)
-      VALUES(${id},${response.estado})`;
-      await sql`INSERT INTO users.address (userid,uf)
-      VALUES(${id},${response.uf})`;
-      await sql`INSERT INTO users.address (userid,localidade)
-      VALUES(${id},${response.localidade})`;
-      await sql`INSERT INTO users.address (userid,bairro)
-      VALUES(${id},${response.bairro})`;
-      await sql`INSERT INTO users.address (userid,logradouro)
-      VALUES(${id},${response.logradouro})`;
-    }
-    if (user.numcasa != undefined) {
-      await sql`INSERT INTO users.address(userid,numcasa)
-      VALUES(${id},${user.numcasa})`;
+      await sql`INSERT INTO users.address (userid,cep,estado,uf,localidade,bairro,logradouro,numcasa)
+      VALUES(${id},
+      ${user.cep},
+      ${response.estado},
+      ${response.uf},
+      ${response.localidade},
+      ${response.bairro},
+      ${response.logradouro},
+      ${user.numcasa})`;
     }
     res.send(`${user.firstname} id:${id} foi adicionado`);
   } catch {
