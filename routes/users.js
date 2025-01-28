@@ -1,4 +1,4 @@
-import express from "express";
+import express, { response } from "express";
 import { v4 as uuid } from "uuid";
 import sql from "../db.js";
 import axios from "axios";
@@ -15,7 +15,7 @@ async function ceprequest(cep) {
 
 router.get("/", async (req, res) => {
   res.send(
-    await sql`SELECT users.userid, users.firstname, users.lastname, users.email, ARRAY_AGG(DISTINCT phones.phone) AS phones,
+    await sql`SELECT users.userid, users.firstname, users.lastname, users.email, JSON_AGG(JSON_BUILD_OBJECT ('id',phones.id,'phone',phones.phone)) AS phones,
     JSON_AGG(JSON_BUILD_OBJECT('cep',address.cep ,'uf',address.uf, 'localidade',address.localidade,'logradouro',address.logradouro,'bairro',address.bairro,'numero',address.numcasa)) AS address
     FROM users.users
     LEFT JOIN users.phones
@@ -29,7 +29,8 @@ router.get("/", async (req, res) => {
 router.get("/:id", async (req, res) => {
   const { id } = req.params;
   const foundUser =
-    await sql`SELECT users.userid, users.firstname, users.lastname, users.email, ARRAY_AGG(DISTINCT phones.phone) AS phones ,ARRAY_AGG(DISTINCT address.useraddress) AS address
+    await sql`SELECT users.userid, users.firstname, users.lastname, users.email, ARRAY_AGG(DISTINCT phones.phone) AS phones ,
+    JSON_AGG(JSON_BUILD_OBJECT('cep',address.cep ,'uf',address.uf, 'localidade',address.localidade,'logradouro',address.logradouro,'bairro',address.bairro,'numero',address.numcasa)) AS address
     FROM users.users 
     LEFT JOIN users.phones 
     ON users.userid = phones.userid
@@ -77,10 +78,20 @@ router.post("/phone/:id", async (req, res) => {
 
 router.post("/address/:id", async (req, res) => {
   const { id } = req.params;
-  const { address } = req.body;
-  await sql`INSERT INTO users.address (userid,useraddress) 
-  VALUES (${id}, ${address})`;
-  res.send(`O telefone ${address} foi adicionado`);
+  const address = req.body;
+  if (address.cep != undefined && address.numcasa != undefined) {
+    const response = await ceprequest(address.cep);
+    await sql`INSERT INTO users.address (userid,cep,estado,uf,localidade,bairro,logradouro,numcasa)
+    VALUES(${id},
+    ${address.cep},
+    ${response.estado},
+    ${response.uf},
+    ${response.localidade},
+    ${response.bairro},
+    ${response.logradouro},
+    ${address.numcasa})`;
+  }
+  res.send(`O endereço ${address.cep} foi adicionado`);
 });
 
 router.delete("/:id", async (req, res) => {
@@ -98,21 +109,36 @@ router.delete("/:id", async (req, res) => {
   }
 });
 
+router.patch("/phones/:id", async (req, res) => {
+  const { id } = req.params;
+  const phones = req.body;
+  try {
+    const patched =
+      await sql`SELECT * FROM users.phones WHERE userid = ${id} AND id = ${phones.id}`;
+    if (phones != undefined) {
+      patched[0] = phones.numbers;
+      await sql`UPDATE users.phones SET phone = ${patched[0]} WHERE userid = ${id} AND id = ${phones.id};`;
+      res.send(`atualizado`);
+    }
+  } catch {
+    res.send(`Erro`);
+  }
+});
+
 router.patch("/:id", async (req, res) => {
   const { id } = req.params;
-  const { firstname, lastname, email, phone } = req.body;
+  const { firstname, lastname, email, cep, numcasa } = req.body;
   try {
     const patched =
       await sql`SELECT * FROM users.users WHERE userid LIKE ${id}`;
     if (firstname) patched[0].firstname = firstname;
     if (lastname) patched[0].lastname = lastname;
     if (email) patched[0].email = email;
-    if (phone) patched[0].phone = phone;
-    await sql`UPDATE users.users SET firstname = ${patched[0].firstname}, lastname = ${patched[0].lastname}, email = ${patched[0].email}
+    await sql`UPDATE users.users SET 
+    firstname = ${patched[0].firstname}, 
+    lastname = ${patched[0].lastname}, 
+    email = ${patched[0].email},
     WHERE userid LIKE ${id};`;
-    await sql`UPDATE users.phones SET phone = ${phone} 
-    WHERE userid LIKE ${id}`;
-    res.send(`Usuario ${id} alterado`);
   } catch {
     res.send(`Erro`);
   }
