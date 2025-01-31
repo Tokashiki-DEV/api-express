@@ -18,7 +18,7 @@ router.post("/", (req, res) => {
   const user = req.body;
   const id = uuid();
   users.push({ ...user, id });
-  res.send(`${user.first_name} foi adicionado, id: ${id}`);
+  res.send(id);
 });
 
 router.delete("/:id", (req, res) => {
